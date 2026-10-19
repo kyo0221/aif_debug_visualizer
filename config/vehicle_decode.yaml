@@ -1,0 +1,35 @@
+topics:
+  cmd_vel: /cmd_vel
+  joy: /joy
+  autonomous: /autonomous
+  can_tx: /can_tx
+  can_rx_prefix: /can_rx_
+  caster_data: /caster_data
+  velocity_body: /vectornav/velocity_body
+  ins_status: /vectornav/raw/common
+vehicle:
+  wheel_radius: 0.124
+  linear_max_vel: 3.0
+  steering_max_deg: 15.0
+can:
+  drive_cmd: {id: 0x210, right: {offset: 0, type: int32}, left: {offset: 4, type: int32}}
+  drive_meas: {id: 0x711, right: {offset: 0, type: int32}, left: {offset: 4, type: int32}}
+  caster_angle: {id: 0x012, offset: 0, counts_per_rev: 16384, zero_offset_deg: -86.24}
+  caster_rot: {id: 0x013, offset: 0, counts_per_rev: 16384, gear_ratio: 0.5909, sign: -1}
+  estop: {id: 0x712, byte: 6}
+  odrive: {node_id: 24}
+signs:
+  yaw_rate: -1
+  steering_cmd: 1
+  caster_meas: 1
+chain:
+  min_speed: 0.3
+  min_steer_deg: 2.0
+  window_sec: 1.0
+  good_ratio: 0.7
+  bad_ratio: 0.3
+  deadband: {rpm_diff: 5, caster_deg: 0.5, yaw_rate: 0.02}
+freshness:
+  stale_sec: 2.0
+  expected_hz: {cmd_vel: 20, joy: 20, drive_cmd: 500, drive_meas: 300, caster_data: 500,
+                caster_angle: 100, velocity_body: 20, ins_status: 20}
