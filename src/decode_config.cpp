@@ -94,6 +94,13 @@ DecodeConfig DecodeConfig::load(const std::string & path)
   for (const auto & kv : node(f, "expected_hz")) {
     c.expected_hz[kv.first.as<std::string>()] = kv.second.as<double>();
   }
+  for (const char * k : {"cmd_vel", "joy", "drive_cmd", "drive_meas", "caster_data",
+      "caster_angle", "velocity_body", "ins_status"})
+  {
+    if (!c.expected_hz.count(k)) {
+      throw std::runtime_error(std::string("missing key: freshness.expected_hz.") + k);
+    }
+  }
   return c;
 }
 

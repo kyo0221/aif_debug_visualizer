@@ -13,7 +13,7 @@ namespace aif_debug_visualizer {
 namespace {
 std::mutex registry_mutex;
 std::map<std::string, std::weak_ptr<VehicleState>> registry;
-std::weak_ptr<VehicleState> latest_state;
+std::vector<std::weak_ptr<VehicleState>> creation_order;
 using socketcan_interface_msg::msg::SocketcanIF;
 
 Frame toFrame(const SocketcanIF & m) {
@@ -32,141 +32,191 @@ std::shared_ptr<VehicleState> VehicleState::get(rclcpp::Node::SharedPtr node, co
   }
   auto created = std::make_shared<VehicleState>(node, DecodeConfig::load(config_path));
   registry[key] = created;
-  latest_state = created;
+  creation_order.push_back(created);
   return created;
 }
 
 std::shared_ptr<VehicleState> VehicleState::latest() {
   std::lock_guard<std::mutex> lock(registry_mutex);
-  return latest_state.lock();
+  for (auto it = creation_order.rbegin(); it != creation_order.rend(); ++it) {
+    if (auto alive = it->lock()) return alive;
+  }
+  return nullptr;
 }
 
-template <typename Msg, typename Fn>
-void VehicleState::subscribe(const std::string & topic, Fn fn) {
-  subs_.push_back(node_->create_subscription<Msg>(topic, rclcpp::SensorDataQoS(), fn));
-}
+struct VehicleState::Impl {
+  explicit Impl(const DecodeConfig & c)
+      : config(c), chain(c.chain), caster_rot_calc(c.caster_rot) {
+    for (const auto & [key, hz] : config.expected_hz) {
+      fresh.emplace(key, Freshness(hz, config.stale_sec));
+    }
+  }
+
+  DecodeConfig config;
+  mutable std::mutex mutex;
+  std::map<std::string, Freshness> fresh;
+  TurnChain chain;
+  CasterRotation caster_rot_calc;
+  Snapshot s;
+
+  void onCmdVel(const steered_drive_msg::msg::SteeredDrive & m) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto now = Clock::now();
+    s.cmd_velocity = m.velocity;
+    s.cmd_steering = m.steering_angle;
+    fresh.at("cmd_vel").tick(now);
+    chain.setCommand(m.velocity, config.steering_cmd_sign * m.steering_angle, now);
+  }
+
+  void onJoy(const sensor_msgs::msg::Joy & m) {
+    if (m.axes.size() < 3) return;
+    std::lock_guard<std::mutex> lock(mutex);
+    s.joy = {m.axes[1], m.axes[2]};
+    fresh.at("joy").tick(Clock::now());
+  }
+
+  void onAutonomous(const std_msgs::msg::Bool & m) {
+    std::lock_guard<std::mutex> lock(mutex);
+    s.autonomous = m.data;
+  }
+
+  void onCanTx(const SocketcanIF & m) {
+    if (m.canid != config.drive_cmd.id) return;
+    auto d = decodeDrive(toFrame(m), m.candlc, config.drive_cmd);
+    if (!d) return;
+    std::lock_guard<std::mutex> lock(mutex);
+    auto now = Clock::now();
+    s.drive_cmd = d;
+    fresh.at("drive_cmd").tick(now);
+    chain.push(1, d->right - d->left, now);
+  }
+
+  void onCasterData(const std_msgs::msg::Float64MultiArray & m) {
+    if (m.data.size() < 3) return;
+    std::lock_guard<std::mutex> lock(mutex);
+    auto now = Clock::now();
+    s.caster = {m.data[0], m.data[1], m.data[2]};
+    fresh.at("caster_data").tick(now);
+    chain.push(3, config.caster_meas_sign * m.data[1], now);
+  }
+
+  void onVelocityBody(const geometry_msgs::msg::TwistWithCovarianceStamped & m) {
+    std::lock_guard<std::mutex> lock(mutex);
+    auto now = Clock::now();
+    const auto & tw = m.twist.twist;
+    s.vbody_linear = {tw.linear.x, tw.linear.y, tw.linear.z};
+    s.yaw_rate_raw = tw.angular.z;
+    fresh.at("velocity_body").tick(now);
+    chain.push(4, config.yaw_rate_sign * tw.angular.z, now);
+  }
+
+  void onIns(const vectornav_msgs::msg::CommonGroup & m) {
+    std::lock_guard<std::mutex> lock(mutex);
+    s.ins = m.insstatus;
+    fresh.at("ins_status").tick(Clock::now());
+  }
+
+  void onCan(const SocketcanIF & m, uint32_t id) {
+    const Frame f = toFrame(m);
+    const uint8_t dlc = m.candlc;
+    std::lock_guard<std::mutex> lock(mutex);
+    auto now = Clock::now();
+    if (id == config.drive_meas.id) {
+      if (auto d = decodeDrive(f, dlc, config.drive_meas)) {
+        s.drive_meas = d;
+        fresh.at("drive_meas").tick(now);
+        chain.push(2, d->right - d->left, now);
+      }
+    } else if (id == config.caster_angle.id) {
+      if (auto a = decodeCasterAngle(f, dlc, config.caster_angle)) {
+        s.caster_angle = a;
+        s.caster_angle_raw = readInt16(f, config.caster_angle.offset);
+        fresh.at("caster_angle").tick(now);
+      }
+    } else if (id == config.caster_rot.id) {
+      if (auto r = caster_rot_calc.update(f, dlc)) s.caster_rot = r;
+    } else if (id == config.estop.id) {
+      if (auto e = decodeEstop(f, dlc, config.estop)) {
+        s.estop = e;
+        chain.setEstop(*e);
+      }
+    } else if (id == odriveCanId(config.odrive_node_id, 0x01)) {
+      if (auto v = decodeOdriveAxisState(f, dlc)) s.odrive_axis_state = v;
+    } else if (id == odriveCanId(config.odrive_node_id, 0x09)) {
+      if (auto v = decodeFloatPair(f, dlc)) s.odrive_encoder = v;
+    } else if (id == odriveCanId(config.odrive_node_id, 0x17)) {
+      if (auto v = decodeFloatPair(f, dlc)) s.odrive_bus = v;
+    }
+  }
+
+  Snapshot snapshot(Clock::time_point now) const {
+    std::lock_guard<std::mutex> lock(mutex);
+    Snapshot out = s;
+    auto stale = [&](const char * key) { return fresh.at(key).level(now) == Freshness::Level::Stale; };
+    if (stale("cmd_vel")) { out.cmd_velocity.reset(); out.cmd_steering.reset(); }
+    if (stale("joy")) out.joy.reset();
+    if (stale("drive_cmd")) out.drive_cmd.reset();
+    if (stale("drive_meas")) out.drive_meas.reset();
+    if (stale("caster_data")) out.caster.reset();
+    if (stale("caster_angle")) { out.caster_angle_raw.reset(); out.caster_angle.reset(); }
+    if (stale("velocity_body")) { out.vbody_linear.reset(); out.yaw_rate_raw.reset(); }
+    if (stale("ins_status")) out.ins.reset();
+    out.chain = chain.view(now);
+    for (const auto & [key, f] : fresh) out.freshness[key] = {f.hz(now), f.level(now)};
+    return out;
+  }
+};
 
 VehicleState::VehicleState(rclcpp::Node::SharedPtr node, DecodeConfig config)
-    : node_(std::move(node)), config_(std::move(config)), chain_(config_.chain), caster_rot_calc_(config_.caster_rot) {
-  for (const auto & [key, hz] : config_.expected_hz) {
-    fresh_.emplace(key, Freshness(hz, config_.stale_sec));
-  }
+    : node_(std::move(node)), config_(std::move(config)), impl_(std::make_shared<Impl>(config_)) {
   const auto & t = config_.topics;
+  std::weak_ptr<Impl> weak = impl_;
+  auto qos = rclcpp::SensorDataQoS();
 
-  subscribe<steered_drive_msg::msg::SteeredDrive>(t.at("cmd_vel"), [this](steered_drive_msg::msg::SteeredDrive::ConstSharedPtr m) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto now = Clock::now();
-    s_.cmd_velocity = m->velocity;
-    s_.cmd_steering = m->steering_angle;
-    fresh_.at("cmd_vel").tick(now);
-    chain_.setCommand(m->velocity, config_.steering_cmd_sign * m->steering_angle, now);
-  });
-
-  subscribe<sensor_msgs::msg::Joy>(t.at("joy"), [this](sensor_msgs::msg::Joy::ConstSharedPtr m) {
-    if (m->axes.size() < 3) return;
-    std::lock_guard<std::mutex> lock(mutex_);
-    s_.joy = {m->axes[1], m->axes[2]};
-    fresh_.at("joy").tick(Clock::now());
-  });
-
-  subscribe<std_msgs::msg::Bool>(t.at("autonomous"), [this](std_msgs::msg::Bool::ConstSharedPtr m) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    s_.autonomous = m->data;
-  });
-
-  subscribe<SocketcanIF>(t.at("can_tx"), [this](SocketcanIF::ConstSharedPtr m) {
-    if (m->canid != config_.drive_cmd.id) return;
-    auto d = decodeDrive(toFrame(*m), m->candlc, config_.drive_cmd);
-    if (!d) return;
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto now = Clock::now();
-    s_.drive_cmd = d;
-    fresh_.at("drive_cmd").tick(now);
-    chain_.push(1, d->right - d->left, now);
-  });
+  subs_.push_back(node_->create_subscription<steered_drive_msg::msg::SteeredDrive>(
+    t.at("cmd_vel"), qos, [weak](steered_drive_msg::msg::SteeredDrive::ConstSharedPtr m) {
+      if (auto i = weak.lock()) i->onCmdVel(*m);
+    }));
+  subs_.push_back(node_->create_subscription<sensor_msgs::msg::Joy>(
+    t.at("joy"), qos, [weak](sensor_msgs::msg::Joy::ConstSharedPtr m) {
+      if (auto i = weak.lock()) i->onJoy(*m);
+    }));
+  subs_.push_back(node_->create_subscription<std_msgs::msg::Bool>(
+    t.at("autonomous"), qos, [weak](std_msgs::msg::Bool::ConstSharedPtr m) {
+      if (auto i = weak.lock()) i->onAutonomous(*m);
+    }));
+  subs_.push_back(node_->create_subscription<SocketcanIF>(
+    t.at("can_tx"), qos, [weak](SocketcanIF::ConstSharedPtr m) {
+      if (auto i = weak.lock()) i->onCanTx(*m);
+    }));
 
   const uint32_t ids[] = {
     config_.drive_meas.id, config_.caster_angle.id, config_.caster_rot.id, config_.estop.id,
     odriveCanId(config_.odrive_node_id, 0x01), odriveCanId(config_.odrive_node_id, 0x09),
     odriveCanId(config_.odrive_node_id, 0x17)};
   for (uint32_t id : ids) {
-    subscribe<SocketcanIF>(config_.canRxTopic(id), [this, id](SocketcanIF::ConstSharedPtr m) { onCan(*m, id); });
+    subs_.push_back(node_->create_subscription<SocketcanIF>(
+      config_.canRxTopic(id), qos, [weak, id](SocketcanIF::ConstSharedPtr m) {
+        if (auto i = weak.lock()) i->onCan(*m, id);
+      }));
   }
 
-  subscribe<std_msgs::msg::Float64MultiArray>(t.at("caster_data"), [this](std_msgs::msg::Float64MultiArray::ConstSharedPtr m) {
-    if (m->data.size() < 3) return;
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto now = Clock::now();
-    s_.caster = {m->data[0], m->data[1], m->data[2]};
-    fresh_.at("caster_data").tick(now);
-    chain_.push(3, config_.caster_meas_sign * m->data[1], now);
-  });
-
-  subscribe<geometry_msgs::msg::TwistWithCovarianceStamped>(t.at("velocity_body"), [this](geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr m) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    auto now = Clock::now();
-    const auto & tw = m->twist.twist;
-    s_.vbody_linear = {tw.linear.x, tw.linear.y, tw.linear.z};
-    s_.yaw_rate_raw = tw.angular.z;
-    fresh_.at("velocity_body").tick(now);
-    chain_.push(4, config_.yaw_rate_sign * tw.angular.z, now);
-  });
-
-  subscribe<vectornav_msgs::msg::CommonGroup>(t.at("ins_status"), [this](vectornav_msgs::msg::CommonGroup::ConstSharedPtr m) {
-    std::lock_guard<std::mutex> lock(mutex_);
-    s_.ins = m->insstatus;
-    fresh_.at("ins_status").tick(Clock::now());
-  });
-}
-
-void VehicleState::onCan(const SocketcanIF & m, uint32_t id) {
-  const Frame f = toFrame(m);
-  const uint8_t dlc = m.candlc;
-  std::lock_guard<std::mutex> lock(mutex_);
-  auto now = Clock::now();
-  if (id == config_.drive_meas.id) {
-    if (auto d = decodeDrive(f, dlc, config_.drive_meas)) {
-      s_.drive_meas = d;
-      fresh_.at("drive_meas").tick(now);
-      chain_.push(2, d->right - d->left, now);
-    }
-  } else if (id == config_.caster_angle.id) {
-    if (auto a = decodeCasterAngle(f, dlc, config_.caster_angle)) {
-      s_.caster_angle = a;
-      s_.caster_angle_raw = readInt16(f, config_.caster_angle.offset);
-      fresh_.at("caster_angle").tick(now);
-    }
-  } else if (id == config_.caster_rot.id) {
-    if (auto r = caster_rot_calc_.update(f, dlc)) s_.caster_rot = r;
-  } else if (id == config_.estop.id) {
-    if (auto e = decodeEstop(f, dlc, config_.estop)) {
-      s_.estop = e;
-      chain_.setEstop(*e);
-    }
-  } else if (id == odriveCanId(config_.odrive_node_id, 0x01)) {
-    if (auto v = decodeOdriveAxisState(f, dlc)) s_.odrive_axis_state = v;
-  } else if (id == odriveCanId(config_.odrive_node_id, 0x09)) {
-    if (auto v = decodeFloatPair(f, dlc)) s_.odrive_encoder = v;
-  } else if (id == odriveCanId(config_.odrive_node_id, 0x17)) {
-    if (auto v = decodeFloatPair(f, dlc)) s_.odrive_bus = v;
-  }
+  subs_.push_back(node_->create_subscription<std_msgs::msg::Float64MultiArray>(
+    t.at("caster_data"), qos, [weak](std_msgs::msg::Float64MultiArray::ConstSharedPtr m) {
+      if (auto i = weak.lock()) i->onCasterData(*m);
+    }));
+  subs_.push_back(node_->create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(
+    t.at("velocity_body"), qos, [weak](geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr m) {
+      if (auto i = weak.lock()) i->onVelocityBody(*m);
+    }));
+  subs_.push_back(node_->create_subscription<vectornav_msgs::msg::CommonGroup>(
+    t.at("ins_status"), qos, [weak](vectornav_msgs::msg::CommonGroup::ConstSharedPtr m) {
+      if (auto i = weak.lock()) i->onIns(*m);
+    }));
 }
 
 VehicleState::Snapshot VehicleState::snapshot(Clock::time_point now) const {
-  std::lock_guard<std::mutex> lock(mutex_);
-  Snapshot s = s_;
-  auto stale = [&](const char * key) { return fresh_.at(key).level(now) == Freshness::Level::Stale; };
-  if (stale("cmd_vel")) { s.cmd_velocity.reset(); s.cmd_steering.reset(); }
-  if (stale("joy")) s.joy.reset();
-  if (stale("drive_cmd")) s.drive_cmd.reset();
-  if (stale("drive_meas")) s.drive_meas.reset();
-  if (stale("caster_data")) s.caster.reset();
-  if (stale("caster_angle")) { s.caster_angle_raw.reset(); s.caster_angle.reset(); }
-  if (stale("velocity_body")) { s.vbody_linear.reset(); s.yaw_rate_raw.reset(); }
-  if (stale("ins_status")) s.ins.reset();
-  s.chain = chain_.view(now);
-  for (const auto & [key, f] : fresh_) s.freshness[key] = {f.hz(now), f.level(now)};
-  return s;
+  return impl_->snapshot(now);
 }
 
 }  // namespace aif_debug_visualizer

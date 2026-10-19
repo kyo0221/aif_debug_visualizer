@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include <algorithm>
+#include <fstream>
 #include <thread>
 #include <rclcpp/rclcpp.hpp>
 #include <socketcan_interface_msg/msg/socketcan_if.hpp>
@@ -73,4 +74,20 @@ TEST_F(VehicleStateTest, RegistrySharesInstanceAndTracksLatest) {
   EXPECT_NE(a, vs);
   EXPECT_EQ(VehicleState::get(node, CONFIG_PATH), a);
   EXPECT_EQ(VehicleState::latest(), a);
+  std::string other = "/tmp/aif_debug_vs_other.yaml";
+  std::ofstream(other) << std::ifstream(CONFIG_PATH).rdbuf();
+  auto b = VehicleState::get(node, other);
+  EXPECT_EQ(VehicleState::latest(), b);
+  b.reset();
+  EXPECT_EQ(VehicleState::latest(), a);
+}
+TEST_F(VehicleStateTest, DestroyedInstanceIgnoresLateMessages) {
+  auto rx = node->create_publisher<SocketcanIF>("/can_rx_711", rclcpp::SensorDataQoS());
+  auto local = std::make_shared<VehicleState>(node, DecodeConfig::load(CONFIG_PATH));
+  spinFor(200ms);
+  rx->publish(frame(0x711, 8, i32pair(1, 2)));
+  spinFor(50ms);
+  local.reset();
+  for (int i = 0; i < 5; ++i) { rx->publish(frame(0x711, 8, i32pair(1, 2))); spinFor(10ms); }
+  SUCCEED();
 }

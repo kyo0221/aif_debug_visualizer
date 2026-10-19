@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <cstdlib>
 #include <fstream>
+#include <sstream>
 #include "aif_debug_visualizer/decode_config.hpp"
 using aif_debug_visualizer::DecodeConfig;
 
@@ -47,4 +48,21 @@ TEST(DecodeConfig, DefaultPathPrefersEnv) {
   setenv("AIF_DEBUG_DECODE_CONFIG", "", 1);
   EXPECT_NE(DecodeConfig::defaultPath(), "");
   unsetenv("AIF_DEBUG_DECODE_CONFIG");
+}
+
+TEST(DecodeConfig, MissingExpectedHzKeyThrows) {
+  std::ifstream in(CONFIG_PATH);
+  std::stringstream ss; ss << in.rdbuf();
+  std::string y = ss.str();
+  auto pos = y.find("joy: 20, ");
+  ASSERT_NE(pos, std::string::npos);
+  y.erase(pos, 9);
+  std::string p = "/tmp/aif_debug_missing_hz.yaml";
+  std::ofstream(p) << y;
+  try {
+    DecodeConfig::load(p);
+    FAIL();
+  } catch (const std::runtime_error & e) {
+    EXPECT_STREQ(e.what(), "missing key: freshness.expected_hz.joy");
+  }
 }

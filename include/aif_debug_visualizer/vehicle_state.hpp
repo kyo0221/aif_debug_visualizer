@@ -49,18 +49,12 @@ class VehicleState {
   Snapshot snapshot(Clock::time_point now) const;
 
  private:
-  template <typename Msg, typename Fn>
-  void subscribe(const std::string & topic, Fn fn);
-  void onCan(const socketcan_interface_msg::msg::SocketcanIF & m, uint32_t id);
+  struct Impl;
 
   rclcpp::Node::SharedPtr node_;
   DecodeConfig config_;
-  mutable std::mutex mutex_;
+  std::shared_ptr<Impl> impl_;
   std::vector<rclcpp::SubscriptionBase::SharedPtr> subs_;
-  std::map<std::string, Freshness> fresh_;
-  TurnChain chain_;
-  CasterRotation caster_rot_calc_;
-  Snapshot s_;
 };
 
 }  // namespace aif_debug_visualizer
