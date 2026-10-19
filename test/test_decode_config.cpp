@@ -18,6 +18,9 @@ TEST(DecodeConfig, LoadsShippedYaml) {
   EXPECT_DOUBLE_EQ(c.caster_angle.zero_offset_deg, -86.24);
   EXPECT_EQ(c.caster_rot.sign, -1);
   EXPECT_EQ(c.estop.byte, 6);
+  EXPECT_EQ(c.caster_angle.id, 0x12u);
+  EXPECT_EQ(c.caster_rot.id, 0x13u);
+  EXPECT_EQ(c.estop.id, 0x712u);
   EXPECT_EQ(c.odrive_node_id, 24u);
   EXPECT_EQ(c.yaw_rate_sign, -1);
   EXPECT_DOUBLE_EQ(c.chain.min_steer_deg, 2.0);
