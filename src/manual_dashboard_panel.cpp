@@ -15,7 +15,6 @@ const char * kGreen = "#2ecc71";
 const char * kYellow = "#f1c40f";
 const char * kRed = "#e74c3c";
 const char * kGray = "#7f8c8d";
-const char * kText = "#e8e8e8";
 
 const std::vector<std::pair<std::string, std::string>> kRates = {
   {"/cmd_vel", "cmd_vel"}, {"/joy", "joy"}, {"0x210 tx", "drive_cmd"}, {"0x711 rx", "drive_meas"},
@@ -23,7 +22,7 @@ const std::vector<std::pair<std::string, std::string>> kRates = {
   {"ins_status", "ins_status"}};
 
 const std::vector<std::string> kRaw = {
-  "0x012 raw", "0x013 rot", "vx / vy", "\xCF\x89 raw (NED)", "INS flags", "ODrive", "joy",
+  "0x012 raw", "0x013 rot", "vx / vy", "\xCF\x89 raw (NED)", "INS flags", "ODrive", "joy axes",
   "rpm\xE2\x86\x92m/s L/R"};
 
 template <typename... A>
@@ -75,7 +74,7 @@ void ManualDashboardPanel::set(const std::string & key, const std::string & text
 {
   auto * l = values_.at(key);
   l->setText(QString::fromStdString(text));
-  l->setStyleSheet(QString("color: %1").arg(color));
+  l->setStyleSheet(color ? QString("color: %1").arg(color) : QString());
 }
 
 void ManualDashboardPanel::refresh()
@@ -106,7 +105,7 @@ void ManualDashboardPanel::refresh()
   }
 
   auto put = [&](const std::string & key, bool ok, const std::string & text) {
-    if (ok) set(key, text, kText);
+    if (ok) set(key, text, nullptr);
     else set(key, none, kGray);
   };
 
@@ -129,7 +128,7 @@ void ManualDashboardPanel::refresh()
       " pos=" + (s.odrive_encoder ? fmt("%.2f", s.odrive_encoder->first) : none) +
       " vbus=" + (s.odrive_bus ? fmt("%.1f", s.odrive_bus->first) : none) +
       " ibus=" + (s.odrive_bus ? fmt("%.2f", s.odrive_bus->second) : none) : "");
-  put("joy", s.joy.has_value(), s.joy ? fmt("%.2f / %.2f", (*s.joy)[0], (*s.joy)[1]) : "");
+  put("joy axes", s.joy.has_value(), s.joy ? fmt("%.2f / %.2f", (*s.joy)[0], (*s.joy)[1]) : "");
   put("rpm\xE2\x86\x92m/s L/R", s.drive_meas.has_value(),
     s.drive_meas ? fmt("%.2f / %.2f", rpmToMps(s.drive_meas->left, cfg.wheel_radius),
       rpmToMps(s.drive_meas->right, cfg.wheel_radius)) : "");

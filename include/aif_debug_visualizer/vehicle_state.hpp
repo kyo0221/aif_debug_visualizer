@@ -1,5 +1,6 @@
 #pragma once
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <map>
@@ -7,6 +8,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 #include <rclcpp/rclcpp.hpp>
@@ -44,6 +46,7 @@ class VehicleState {
   static std::shared_ptr<VehicleState> latest();
 
   VehicleState(rclcpp::Node::SharedPtr node, DecodeConfig config);
+  ~VehicleState();
 
   const DecodeConfig & config() const { return config_; }
   Snapshot snapshot(Clock::time_point now) const;
@@ -55,6 +58,10 @@ class VehicleState {
   DecodeConfig config_;
   std::shared_ptr<Impl> impl_;
   std::vector<rclcpp::SubscriptionBase::SharedPtr> subs_;
+  rclcpp::CallbackGroup::SharedPtr group_;
+  std::shared_ptr<rclcpp::executors::SingleThreadedExecutor> executor_;
+  std::atomic<bool> stop_{false};
+  std::thread thread_;
 };
 
 }  // namespace aif_debug_visualizer

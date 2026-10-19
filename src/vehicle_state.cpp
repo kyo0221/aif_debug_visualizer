@@ -183,23 +183,26 @@ VehicleState::VehicleState(rclcpp::Node::SharedPtr node, DecodeConfig config)
   const auto & t = config_.topics;
   std::weak_ptr<Impl> weak = impl_;
   auto qos = rclcpp::SensorDataQoS();
+  group_ = node_->create_callback_group(rclcpp::CallbackGroupType::MutuallyExclusive, false);
+  rclcpp::SubscriptionOptions opts;
+  opts.callback_group = group_;
 
   subs_.push_back(node_->create_subscription<steered_drive_msg::msg::SteeredDrive>(
     t.at("cmd_vel"), qos, [weak](steered_drive_msg::msg::SteeredDrive::ConstSharedPtr m) {
       if (auto i = weak.lock()) i->onCmdVel(*m);
-    }));
+    }, opts));
   subs_.push_back(node_->create_subscription<sensor_msgs::msg::Joy>(
     t.at("joy"), qos, [weak](sensor_msgs::msg::Joy::ConstSharedPtr m) {
       if (auto i = weak.lock()) i->onJoy(*m);
-    }));
+    }, opts));
   subs_.push_back(node_->create_subscription<std_msgs::msg::Bool>(
     t.at("autonomous"), qos, [weak](std_msgs::msg::Bool::ConstSharedPtr m) {
       if (auto i = weak.lock()) i->onAutonomous(*m);
-    }));
+    }, opts));
   subs_.push_back(node_->create_subscription<SocketcanIF>(
     t.at("can_tx"), qos, [weak](SocketcanIF::ConstSharedPtr m) {
       if (auto i = weak.lock()) i->onCanTx(*m);
-    }));
+    }, opts));
 
   const uint32_t ids[] = {
     config_.drive_meas.id, config_.caster_angle.id, config_.caster_rot.id, config_.estop.id,
@@ -209,21 +212,32 @@ VehicleState::VehicleState(rclcpp::Node::SharedPtr node, DecodeConfig config)
     subs_.push_back(node_->create_subscription<SocketcanIF>(
       config_.canRxTopic(id), qos, [weak, id](SocketcanIF::ConstSharedPtr m) {
         if (auto i = weak.lock()) i->onCan(*m, id);
-      }));
+      }, opts));
   }
 
   subs_.push_back(node_->create_subscription<std_msgs::msg::Float64MultiArray>(
     t.at("caster_data"), qos, [weak](std_msgs::msg::Float64MultiArray::ConstSharedPtr m) {
       if (auto i = weak.lock()) i->onCasterData(*m);
-    }));
+    }, opts));
   subs_.push_back(node_->create_subscription<geometry_msgs::msg::TwistWithCovarianceStamped>(
     t.at("velocity_body"), qos, [weak](geometry_msgs::msg::TwistWithCovarianceStamped::ConstSharedPtr m) {
       if (auto i = weak.lock()) i->onVelocityBody(*m);
-    }));
+    }, opts));
   subs_.push_back(node_->create_subscription<vectornav_msgs::msg::CommonGroup>(
     t.at("ins_status"), qos, [weak](vectornav_msgs::msg::CommonGroup::ConstSharedPtr m) {
       if (auto i = weak.lock()) i->onIns(*m);
-    }));
+    }, opts));
+
+  executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
+  executor_->add_callback_group(group_, node_->get_node_base_interface());
+  thread_ = std::thread([this]() {
+    while (!stop_ && rclcpp::ok()) executor_->spin_once(std::chrono::milliseconds(50));
+  });
+}
+
+VehicleState::~VehicleState() {
+  stop_ = true;
+  if (thread_.joinable()) thread_.join();
 }
 
 VehicleState::Snapshot VehicleState::snapshot(Clock::time_point now) const {

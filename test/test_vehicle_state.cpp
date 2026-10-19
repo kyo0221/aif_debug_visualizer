@@ -18,7 +18,7 @@ struct VehicleStateTest : ::testing::Test {
   std::shared_ptr<VehicleState> vs = std::make_shared<VehicleState>(node, DecodeConfig::load(CONFIG_PATH));
   void spinFor(std::chrono::milliseconds d) {
     auto end = std::chrono::steady_clock::now() + d;
-    while (std::chrono::steady_clock::now() < end) { rclcpp::spin_some(node); std::this_thread::sleep_for(5ms); }
+    while (std::chrono::steady_clock::now() < end) { std::this_thread::sleep_for(5ms); }
   }
   SocketcanIF frame(uint32_t id, uint8_t dlc, std::array<uint8_t, 8> d) {
     SocketcanIF m; m.canid = id; m.candlc = dlc; std::copy(d.begin(), d.end(), m.candata.begin()); return m;

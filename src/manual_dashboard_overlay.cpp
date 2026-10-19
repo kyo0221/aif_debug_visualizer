@@ -6,6 +6,7 @@
 #include <vector>
 #include <QFont>
 #include <QFontDatabase>
+#include <QFontMetricsF>
 #include <QImage>
 #include <QPainter>
 #include <OgreHardwarePixelBuffer.h>
@@ -259,6 +260,37 @@ void ManualDashboardOverlay::draw(const VehicleState::Snapshot & s, int w, int h
   const int al = Qt::AlignLeft | Qt::AlignVCenter;
   const QString dash = qs(kDash);
 
+  struct Line { std::string t; QColor c; };
+  std::vector<Line> lines;
+  lines.push_back(s.autonomous
+    ? Line{*s.autonomous ? "AUTO" : "MANUAL", kText} : Line{"UNKNOWN", kGray});
+  lines.push_back(!s.estop ? Line{std::string("E-STOP ") + kDash, kGray}
+    : *s.estop ? Line{"E-STOP ACTIVE", kRed} : Line{"E-STOP clear", kGreen});
+  if (s.ins) {
+    const bool ok = s.ins->mode == 2 && s.ins->gps_fix;
+    lines.push_back({std::string("INS ") + insMode(s.ins->mode) + " \xC2\xB7 " +
+      (s.ins->gps_fix ? "fix" : "nofix"), ok ? kGreen : kYellow});
+  } else {
+    lines.push_back({std::string("INS ") + kDash, kGray});
+  }
+  if (!s.odrive_axis_state) {
+    lines.push_back({std::string("ODrive ") + kDash, kGray});
+  } else if (*s.odrive_axis_state == 8) {
+    lines.push_back({std::string("ODrive CLOSED_LOOP") +
+      (s.odrive_bus ? fmt(" %.1f V", s.odrive_bus->first) : std::string()), kGreen});
+  } else {
+    lines.push_back({"ODrive state " + std::to_string(*s.odrive_axis_state), kYellow});
+  }
+  double status_w = 0;
+  for (const auto & l : lines) {
+    status_w = std::max(status_w, QFontMetricsF(font(12, true)).horizontalAdvance(qs(l.t)));
+  }
+  status_w = std::max(status_w + 24 * k, 160 * k);
+  const double drive_w = 150 * k + QFontMetricsF(font(11)).horizontalAdvance("-0000 \xE2\x94\x82 -0000") + 14 * k;
+  const double chain_w = 84 * k * 5 + 20 * k;
+  const double gap = 10 * k;
+  const bool chain_above = 14 * k + drive_w + gap + chain_w + gap + status_w + 14 * k > w;
+
   if (s.estop && *s.estop) {
     p.fillRect(QRectF(0, 0, w, h), QColor(231, 76, 60, 46));
     const QRectF r(w / 2.0 - 150 * k, h / 2.0 - 45 * k, 300 * k, 90 * k);
@@ -300,7 +332,7 @@ void ManualDashboardOverlay::draw(const VehicleState::Snapshot & s, int w, int h
   }
 
   if (show_drive_->getBool()) {
-    const QRectF r(14 * k, h - 120 * k, 290 * k, 106 * k);
+    const QRectF r(14 * k, h - 120 * k, drive_w, 106 * k);
     box(r, 10);
     text("DRIVE rpm  target \xE2\x94\x82 actual", QRectF(r.x() + 10 * k, r.y() + 6 * k, r.width(), 20 * k), 10, kGray, al);
     const double full = cfg.linear_max_vel / (2.0 * M_PI * cfg.wheel_radius / 60.0);
@@ -336,7 +368,7 @@ void ManualDashboardOverlay::draw(const VehicleState::Snapshot & s, int w, int h
 
   if (show_chain_->getBool()) {
     const double cw = 84 * k;
-    const QRectF r(w / 2.0 - (cw * 5 + 20 * k) / 2.0, h - 120 * k, cw * 5 + 20 * k, 106 * k);
+    const QRectF r(w / 2.0 - chain_w / 2.0, h - 120 * k - (chain_above ? 116 * k : 0), chain_w, 106 * k);
     box(r, 10);
     text("TURN CHAIN", QRectF(r.x(), r.y() + 4 * k, r.width(), 20 * k), 10, kGray, ac);
     for (int i = 0; i < 5; ++i) {
@@ -357,29 +389,8 @@ void ManualDashboardOverlay::draw(const VehicleState::Snapshot & s, int w, int h
   }
 
   if (show_status_->getBool()) {
-    const QRectF r(w - 14 * k - 250 * k, h - 120 * k, 250 * k, 106 * k);
+    const QRectF r(w - 14 * k - status_w, h - 120 * k, status_w, 106 * k);
     box(r, 10);
-    struct Line { std::string t; QColor c; };
-    std::vector<Line> lines;
-    lines.push_back(s.autonomous
-      ? Line{*s.autonomous ? "AUTO" : "MANUAL", kText} : Line{"UNKNOWN", kGray});
-    lines.push_back(!s.estop ? Line{std::string("E-STOP ") + kDash, kGray}
-      : *s.estop ? Line{"E-STOP ACTIVE", kRed} : Line{"E-STOP clear", kGreen});
-    if (s.ins) {
-      const bool ok = s.ins->mode == 2 && s.ins->gps_fix;
-      lines.push_back({std::string("INS ") + insMode(s.ins->mode) + " \xC2\xB7 " +
-        (s.ins->gps_fix ? "fix" : "nofix"), ok ? kGreen : kYellow});
-    } else {
-      lines.push_back({std::string("INS ") + kDash, kGray});
-    }
-    if (!s.odrive_axis_state) {
-      lines.push_back({std::string("ODrive ") + kDash, kGray});
-    } else if (*s.odrive_axis_state == 8) {
-      lines.push_back({std::string("ODrive CLOSED_LOOP") +
-        (s.odrive_bus ? fmt(" %.1f V", s.odrive_bus->first) : std::string()), kGreen});
-    } else {
-      lines.push_back({"ODrive state " + std::to_string(*s.odrive_axis_state), kYellow});
-    }
     for (size_t i = 0; i < lines.size(); ++i) {
       text(qs(lines[i].t), QRectF(r.x() + 12 * k, r.y() + 6 * k + i * 24 * k, r.width() - 24 * k, 24 * k),
         12, lines[i].c, al, true);
