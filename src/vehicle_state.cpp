@@ -172,7 +172,14 @@ struct VehicleState::Impl {
     if (old("odrive_encoder")) out.odrive_encoder.reset();
     if (old("odrive_bus")) out.odrive_bus.reset();
     if (old("caster_rot")) out.caster_rot.reset();
-    out.chain = chain.view(now);
+    out.estop_active = out.estop.value_or(false);
+    if (stale("cmd_vel")) {
+      out.chain.fill({Dir::None, Color::Off, 0});
+    } else {
+      TurnChain c = chain;
+      c.setEstop(out.estop_active);
+      out.chain = c.view(now);
+    }
     for (const auto & [key, f] : fresh) out.freshness[key] = {f.hz(now), f.level(now)};
     return out;
   }
@@ -235,7 +242,8 @@ VehicleState::VehicleState(rclcpp::Node::SharedPtr node, DecodeConfig config)
     while (!stop_ && rclcpp::ok(context)) {
       try {
         executor_->spin_once(std::chrono::milliseconds(50));
-      } catch (const std::exception &) {
+      } catch (const std::exception & e) {
+        RCLCPP_ERROR(node_->get_logger(), "dashboard executor stopped: %s", e.what());
         break;
       }
     }

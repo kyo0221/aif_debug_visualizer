@@ -50,6 +50,46 @@ TEST_F(VehicleStateTest, DecodesDriveMeasAndFeedsChain) {
   EXPECT_EQ(s.chain[2].dir, Dir::Left); EXPECT_EQ(s.chain[2].color, Color::Good);
   EXPECT_FALSE(vs->snapshot(VehicleState::Clock::now() + 3s).drive_meas);
 }
+TEST_F(VehicleStateTest, ChainGoesOffWhenCommandIsStale) {
+  auto cmd = node->create_publisher<steered_drive_msg::msg::SteeredDrive>("/cmd_vel", rclcpp::SensorDataQoS());
+  auto rx = node->create_publisher<SocketcanIF>("/can_rx_711", rclcpp::SensorDataQoS());
+  spinFor(200ms);
+  steered_drive_msg::msg::SteeredDrive c; c.velocity = 3.0; c.steering_angle = 0.1;
+  cmd->publish(c);
+  for (int i = 0; i < 10; ++i) { rx->publish(frame(0x711, 8, i32pair(246, 218))); spinFor(10ms); }
+  auto now = VehicleState::Clock::now();
+  EXPECT_EQ(vs->snapshot(now).chain[2].color, Color::Good);
+  for (auto & st : vs->snapshot(now + 3s).chain) {
+    EXPECT_EQ(st.color, Color::Off);
+    EXPECT_EQ(st.dir, Dir::None);
+  }
+  EXPECT_FALSE(vs->snapshot(now + 3s).estop_active);
+}
+TEST_F(VehicleStateTest, StaleEstopDoesNotKeepChainOff) {
+  auto es = node->create_publisher<SocketcanIF>("/can_rx_712", rclcpp::SensorDataQoS());
+  auto cmd = node->create_publisher<steered_drive_msg::msg::SteeredDrive>("/cmd_vel", rclcpp::SensorDataQoS());
+  auto rx = node->create_publisher<SocketcanIF>("/can_rx_711", rclcpp::SensorDataQoS());
+  spinFor(200ms);
+  es->publish(frame(0x712, 8, {0, 0, 0, 0, 0, 0, 1, 0}));
+  spinFor(50ms);
+  steered_drive_msg::msg::SteeredDrive c; c.velocity = 3.0; c.steering_angle = 0.1;
+  cmd->publish(c);
+  spinFor(1700ms);
+  cmd->publish(c);
+  for (int i = 0; i < 10; ++i) { rx->publish(frame(0x711, 8, i32pair(246, 218))); spinFor(10ms); }
+  spinFor(500ms);
+  auto s = vs->snapshot(VehicleState::Clock::now());
+  EXPECT_FALSE(s.estop);
+  EXPECT_FALSE(s.estop_active);
+  EXPECT_EQ(s.chain[2].color, Color::Good);
+}
+TEST_F(VehicleStateTest, EstopActiveFlagFollowsEstop) {
+  auto es = node->create_publisher<SocketcanIF>("/can_rx_712", rclcpp::SensorDataQoS());
+  spinFor(200ms);
+  es->publish(frame(0x712, 8, {0, 0, 0, 0, 0, 0, 1, 0}));
+  spinFor(100ms);
+  EXPECT_TRUE(vs->snapshot(VehicleState::Clock::now()).estop_active);
+}
 TEST_F(VehicleStateTest, IgnoresOtherIdsOnCanTxAndShortFrames) {
   auto tx = node->create_publisher<SocketcanIF>("/can_tx", rclcpp::SensorDataQoS());
   auto rx = node->create_publisher<SocketcanIF>("/can_rx_711", rclcpp::SensorDataQoS());

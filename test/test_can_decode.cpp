@@ -70,3 +70,12 @@ TEST(CanDecode, Odrive) {
 TEST(CanDecode, RpmToMps) {
   EXPECT_NEAR(rpmToMps(77.0, 0.124), 1.0, 1e-3);
 }
+
+TEST(CanDecode, CasterAngleRejectsOffsetPastFrame) {
+  CasterAngleSpec s{0x012, 7, 16384, 0.0};
+  Frame f{};
+  EXPECT_FALSE(decodeCasterAngle(f, 8, s));
+  CasterRotSpec r{0x013, 7, 16384, 0.5909, -1};
+  CasterRotation rot(r);
+  EXPECT_FALSE(rot.update(f, 8));
+}

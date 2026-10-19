@@ -78,7 +78,7 @@ inline double normalizeAngle(double a)
 inline std::optional<double> decodeCasterAngle(
   const Frame & f, uint8_t dlc, const CasterAngleSpec & s)
 {
-  if (s.offset < 0 || s.offset + 2 > dlc) {
+  if (s.offset < 0 || s.offset + 2 > dlc || s.offset + 2 > 8) {
     return std::nullopt;
   }
   double count = readInt16(f, s.offset);
@@ -93,7 +93,7 @@ public:
 
   std::optional<double> update(const Frame & f, uint8_t dlc)
   {
-    if (spec_.offset < 0 || spec_.offset + 2 > dlc) {
+    if (spec_.offset < 0 || spec_.offset + 2 > dlc || spec_.offset + 2 > 8) {
       return std::nullopt;
     }
     int count = readInt16(f, spec_.offset);

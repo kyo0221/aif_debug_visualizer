@@ -51,7 +51,7 @@ ros2 launch aif_debug_visualizer dashboard.launch.py
 - `vehicle`: 輪半径 `wheel_radius`、速度上限 `linear_max_vel`、舵角上限 `steering_max_deg`
 - `can`: 各 CAN ID のバイト位置。0x210 / 0x711 は `right` が byte0-3、`left` が byte4-7（int32 リトルエンディアン、rpm）。左右を入れ替えるときは `offset` を交換する
 - `signs`: 符号規約。舵角・ヨーレートは左旋回が正。`yaw_rate` は `velocity_body.angular.z` に掛ける係数（既定 -1）で、鎖の IMU 段が赤になる場合は符号を反転する
-- `chain`: 鎖の判定。`min_speed` 未満・`min_steer_deg` 未満では判定しない。`window_sec` 内の一致率が `good_ratio` 以上で緑、`bad_ratio` 以下で赤、`deadband` 内の差は無視する
+- `chain`: 鎖の判定。`min_speed` 未満・`min_steer_deg` 未満では判定しない。`window_sec` 内の一致率が `good_ratio` 超で緑、`bad_ratio` 未満で赤、`deadband` 内の差は無視する
 - `freshness`: `stale_sec` 以上受信が無いと灰 `—`。`expected_hz` は各トピックの期待周波数
 
 ## レイアウトの保存

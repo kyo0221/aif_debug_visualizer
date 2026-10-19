@@ -63,9 +63,9 @@ QColor chainColor(Color c)
   }
 }
 
-const char * chainArrow(const StageView & v)
+const char * chainArrow(const StageView & v, bool estop)
 {
-  if (v.color == Color::Off) return "\xE2\x80\x94";
+  if (v.color == Color::Off) return estop ? "\xE2\x80\x94" : "\xE2\x94\x80";
   switch (v.dir) {
     case Dir::Left: return "\xE2\x97\x80";
     case Dir::Right: return "\xE2\x96\xB6";
@@ -74,15 +74,15 @@ const char * chainArrow(const StageView & v)
 }
 
 const char * kDash = "\xE2\x80\x94";
-const char * kStageNames[] = {"cmd", "rpm tx", "rpm rx", "\xCE\xB4 meas", "IMU \xCF\x89"};
+const char * kStageNames[] = {"cmd", "rpm tx", "rpm rx", "\xCE\xB4 meas", "IMU \xCF\x89 (ROS+)"};
 
 }
 
 ManualDashboardOverlay::ManualDashboardOverlay()
 {
   config_ = new rviz_common::properties::StringProperty(
-    "Decode Config", QString::fromStdString(DecodeConfig::defaultPath()),
-    "Path of vehicle_decode.yaml", this, SLOT(reconnect()));
+    "Decode Config", QString(),
+    "Path of vehicle_decode.yaml (empty: AIF_DEBUG_DECODE_CONFIG or package default)", this, SLOT(reconnect()));
   scale_ = new rviz_common::properties::FloatProperty("Scale", 1.0f, "Overlay scale", this);
   show_speed_ = new rviz_common::properties::BoolProperty("Show Speed", true, "", this);
   show_steer_ = new rviz_common::properties::BoolProperty("Show Steering", true, "", this);
@@ -139,7 +139,8 @@ void ManualDashboardOverlay::reconnect()
 {
   if (!isEnabled() || !node_) return;
   try {
-    state_ = VehicleState::get(node_, config_->getStdString());
+    state_ = VehicleState::get(
+      node_, config_->getStdString().empty() ? DecodeConfig::defaultPath() : config_->getStdString());
     setStatus(rviz_common::properties::StatusProperty::Ok, "Config", "OK");
   } catch (const std::exception & e) {
     state_.reset();
@@ -207,8 +208,8 @@ void ManualDashboardOverlay::update(float, float)
   parts.push_back(opt(s.cmd_steering, "%.3f"));
   parts.push_back(s.vbody_linear ? fmt("%.2f", (*s.vbody_linear)[0]) : "-");
   parts.push_back(s.caster ? fmt("%.3f", (*s.caster)[1]) : "-");
-  parts.push_back(s.drive_cmd ? fmtInt("%d/%d", static_cast<int>(s.drive_cmd->left), static_cast<int>(s.drive_cmd->right)) : "-");
-  parts.push_back(s.drive_meas ? fmtInt("%d/%d", static_cast<int>(s.drive_meas->left), static_cast<int>(s.drive_meas->right)) : "-");
+  parts.push_back(s.drive_cmd ? fmtInt("%d/%d", static_cast<int>(std::lround(s.drive_cmd->left)), static_cast<int>(std::lround(s.drive_cmd->right))) : "-");
+  parts.push_back(s.drive_meas ? fmtInt("%d/%d", static_cast<int>(std::lround(s.drive_meas->left)), static_cast<int>(std::lround(s.drive_meas->right))) : "-");
   for (const auto & c : s.chain) {
     parts.push_back(fmtInt("%d/%d", static_cast<int>(c.dir), static_cast<int>(c.color)));
   }
@@ -315,12 +316,15 @@ void ManualDashboardOverlay::draw(const VehicleState::Snapshot & s, int w, int h
 
   if (show_steer_->getBool()) {
     const double deg = 180.0 / M_PI;
-    const bool close = s.cmd_steering && s.caster &&
-      std::abs((*s.cmd_steering - (*s.caster)[1]) * deg) <= 3.0;
+    const std::optional<double> cmd_steer = s.cmd_steering
+      ? std::optional<double>(cfg.steering_cmd_sign * *s.cmd_steering) : std::nullopt;
+    const std::optional<double> meas_steer = s.caster
+      ? std::optional<double>(cfg.caster_meas_sign * (*s.caster)[1]) : std::nullopt;
+    const bool close = cmd_steer && meas_steer && std::abs((*cmd_steer - *meas_steer) * deg) <= 3.0;
     const struct { double x; const char * title; std::optional<double> v; QColor c; } items[] = {
-      {0.14, "\xCE\xB4 CMD", s.cmd_steering, kText},
+      {0.14, "\xCE\xB4 CMD", cmd_steer, kText},
       {0.86, "\xCE\xB4 MEAS",
-        s.caster ? std::optional<double>((*s.caster)[1]) : std::nullopt, close ? kGreen : kText},
+        meas_steer, close ? kGreen : kText},
     };
     for (const auto & it : items) {
       const QRectF r(w * it.x - 70 * k, 10 * k, 140 * k, 70 * k);
@@ -380,7 +384,7 @@ void ManualDashboardOverlay::draw(const VehicleState::Snapshot & s, int w, int h
         p.setBrush(Qt::NoBrush);
         p.drawRoundedRect(cell.adjusted(4 * k, 0, -4 * k, 0), 6 * k, 6 * k);
       }
-      text(qs(chainArrow(v)), QRectF(cell.x(), cell.y() + 2 * k, cell.width(), 36 * k), 22, c, ac, true);
+      text(qs(chainArrow(v, s.estop_active)), QRectF(cell.x(), cell.y() + 2 * k, cell.width(), 36 * k), 22, c, ac, true);
       text(qs(kStageNames[i]), QRectF(cell.x(), cell.y() + 38 * k, cell.width(), 16 * k), 9, kText, ac);
       if (v.color == Color::NoData) {
         text("no data", QRectF(cell.x(), cell.y() + 54 * k, cell.width(), 14 * k), 8, kGray, ac);
