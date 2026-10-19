@@ -4,4 +4,9 @@
          base_class_type="rviz_common::Display">
     <description>Manual driving dashboard drawn over the 3D view.</description>
   </class>
+  <class name="aif_debug_visualizer/ManualDashboardPanel"
+         type="aif_debug_visualizer::ManualDashboardPanel"
+         base_class_type="rviz_common::Panel">
+    <description>Raw values and topic rates for the manual dashboard.</description>
+  </class>
 </library>

@@ -21,7 +21,9 @@ add_library(${PROJECT_NAME} SHARED
   src/decode_config.cpp
   src/vehicle_state.cpp
   src/manual_dashboard_overlay.cpp
+  src/manual_dashboard_panel.cpp
   include/aif_debug_visualizer/manual_dashboard_overlay.hpp
+  include/aif_debug_visualizer/manual_dashboard_panel.hpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 ament_target_dependencies(${PROJECT_NAME}
