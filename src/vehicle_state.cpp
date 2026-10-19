@@ -58,6 +58,7 @@ struct VehicleState::Impl {
   TurnChain chain;
   CasterRotation caster_rot_calc;
   Snapshot s;
+  std::map<std::string, Clock::time_point> last_rx;
 
   void onCmdVel(const steered_drive_msg::msg::SteeredDrive & m) {
     std::lock_guard<std::mutex> lock(mutex);
@@ -134,18 +135,19 @@ struct VehicleState::Impl {
         fresh.at("caster_angle").tick(now);
       }
     } else if (id == config.caster_rot.id) {
-      if (auto r = caster_rot_calc.update(f, dlc)) s.caster_rot = r;
+      if (auto r = caster_rot_calc.update(f, dlc)) { s.caster_rot = r; last_rx["caster_rot"] = now; }
     } else if (id == config.estop.id) {
       if (auto e = decodeEstop(f, dlc, config.estop)) {
         s.estop = e;
+        last_rx["estop"] = now;
         chain.setEstop(*e);
       }
     } else if (id == odriveCanId(config.odrive_node_id, 0x01)) {
-      if (auto v = decodeOdriveAxisState(f, dlc)) s.odrive_axis_state = v;
+      if (auto v = decodeOdriveAxisState(f, dlc)) { s.odrive_axis_state = v; last_rx["odrive_axis_state"] = now; }
     } else if (id == odriveCanId(config.odrive_node_id, 0x09)) {
-      if (auto v = decodeFloatPair(f, dlc)) s.odrive_encoder = v;
+      if (auto v = decodeFloatPair(f, dlc)) { s.odrive_encoder = v; last_rx["odrive_encoder"] = now; }
     } else if (id == odriveCanId(config.odrive_node_id, 0x17)) {
-      if (auto v = decodeFloatPair(f, dlc)) s.odrive_bus = v;
+      if (auto v = decodeFloatPair(f, dlc)) { s.odrive_bus = v; last_rx["odrive_bus"] = now; }
     }
   }
 
@@ -161,6 +163,15 @@ struct VehicleState::Impl {
     if (stale("caster_angle")) { out.caster_angle_raw.reset(); out.caster_angle.reset(); }
     if (stale("velocity_body")) { out.vbody_linear.reset(); out.yaw_rate_raw.reset(); }
     if (stale("ins_status")) out.ins.reset();
+    auto old = [&](const char * key) {
+      auto it = last_rx.find(key);
+      return it == last_rx.end() || std::chrono::duration<double>(now - it->second).count() > config.stale_sec;
+    };
+    if (old("estop")) out.estop.reset();
+    if (old("odrive_axis_state")) out.odrive_axis_state.reset();
+    if (old("odrive_encoder")) out.odrive_encoder.reset();
+    if (old("odrive_bus")) out.odrive_bus.reset();
+    if (old("caster_rot")) out.caster_rot.reset();
     out.chain = chain.view(now);
     for (const auto & [key, f] : fresh) out.freshness[key] = {f.hz(now), f.level(now)};
     return out;

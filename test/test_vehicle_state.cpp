@@ -91,3 +91,13 @@ TEST_F(VehicleStateTest, DestroyedInstanceIgnoresLateMessages) {
   for (int i = 0; i < 5; ++i) { rx->publish(frame(0x711, 8, i32pair(1, 2))); spinFor(10ms); }
   SUCCEED();
 }
+TEST_F(VehicleStateTest, EstopBecomesUnknownWhenStale) {
+  auto rx = node->create_publisher<SocketcanIF>("/can_rx_712", rclcpp::SensorDataQoS());
+  spinFor(200ms);
+  rx->publish(frame(0x712, 8, {0, 0, 0, 0, 0, 0, 1, 0}));
+  spinFor(100ms);
+  auto now = VehicleState::Clock::now();
+  ASSERT_TRUE(vs->snapshot(now).estop);
+  EXPECT_TRUE(*vs->snapshot(now).estop);
+  EXPECT_FALSE(vs->snapshot(now + 3s).estop);
+}
