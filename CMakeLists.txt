@@ -20,12 +20,16 @@ find_package(vectornav_msgs REQUIRED)
 add_library(${PROJECT_NAME} SHARED
   src/decode_config.cpp
   src/vehicle_state.cpp
+  src/manual_dashboard_overlay.cpp
+  include/aif_debug_visualizer/manual_dashboard_overlay.hpp
 )
 target_include_directories(${PROJECT_NAME} PUBLIC include)
 ament_target_dependencies(${PROJECT_NAME}
   pluginlib rclcpp rviz_common rviz_rendering ament_index_cpp
   std_msgs geometry_msgs sensor_msgs socketcan_interface_msg steered_drive_msg vectornav_msgs)
 target_link_libraries(${PROJECT_NAME} Qt5::Widgets yaml-cpp)
+
+pluginlib_export_plugin_description_file(rviz_common plugin_description.xml)
 
 install(TARGETS ${PROJECT_NAME} LIBRARY DESTINATION lib)
 install(DIRECTORY config launch assets DESTINATION share/${PROJECT_NAME})

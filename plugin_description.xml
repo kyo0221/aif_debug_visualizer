@@ -1,0 +1,7 @@
+<library path="aif_debug_visualizer">
+  <class name="aif_debug_visualizer/ManualDashboardOverlay"
+         type="aif_debug_visualizer::ManualDashboardOverlay"
+         base_class_type="rviz_common::Display">
+    <description>Manual driving dashboard drawn over the 3D view.</description>
+  </class>
+</library>
