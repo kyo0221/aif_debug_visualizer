@@ -24,9 +24,19 @@ ros2 launch aif_debug_visualizer dashboard.launch.py [decode_config:=/path.yaml]
 
 ## bag 再生での確認
 
+ターミナル A:
+
 ```bash
+source /opt/ros/humble/setup.bash && source ~/formula_ws/install/setup.bash
 export ROS_DOMAIN_ID=87
 ros2 bag play /media/kyo/24B46936B4690B9C/aif_bags/4_0ms_1
+```
+
+ターミナル B:
+
+```bash
+source /opt/ros/humble/setup.bash && source ~/aif_debug_ws/install/setup.bash
+export ROS_DOMAIN_ID=87
 ros2 launch aif_debug_visualizer dashboard.launch.py
 ```
 

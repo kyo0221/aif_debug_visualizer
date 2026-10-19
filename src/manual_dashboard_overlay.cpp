@@ -281,15 +281,15 @@ void ManualDashboardOverlay::draw(const VehicleState::Snapshot & s, int w, int h
   } else {
     lines.push_back({"ODrive state " + std::to_string(*s.odrive_axis_state), kYellow});
   }
+  const QFontMetricsF status_fm(font(12, true));
   double status_w = 0;
-  for (const auto & l : lines) {
-    status_w = std::max(status_w, QFontMetricsF(font(12, true)).horizontalAdvance(qs(l.t)));
-  }
+  for (const auto & l : lines) status_w = std::max(status_w, status_fm.horizontalAdvance(qs(l.t)));
   status_w = std::max(status_w + 24 * k, 160 * k);
   const double drive_w = 150 * k + QFontMetricsF(font(11)).horizontalAdvance("-0000 \xE2\x94\x82 -0000") + 14 * k;
   const double chain_w = 84 * k * 5 + 20 * k;
   const double gap = 10 * k;
-  const bool chain_above = 14 * k + drive_w + gap + chain_w + gap + status_w + 14 * k > w;
+  const double side = std::max(show_drive_->getBool() ? drive_w : 0.0, show_status_->getBool() ? status_w : 0.0);
+  const bool chain_above = w / 2.0 - chain_w / 2.0 < 14 * k + side + gap;
 
   if (s.estop && *s.estop) {
     p.fillRect(QRectF(0, 0, w, h), QColor(231, 76, 60, 46));

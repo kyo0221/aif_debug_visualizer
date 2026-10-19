@@ -231,7 +231,14 @@ VehicleState::VehicleState(rclcpp::Node::SharedPtr node, DecodeConfig config)
   executor_ = std::make_shared<rclcpp::executors::SingleThreadedExecutor>();
   executor_->add_callback_group(group_, node_->get_node_base_interface());
   thread_ = std::thread([this]() {
-    while (!stop_ && rclcpp::ok()) executor_->spin_once(std::chrono::milliseconds(50));
+    auto context = node_->get_node_base_interface()->get_context();
+    while (!stop_ && rclcpp::ok(context)) {
+      try {
+        executor_->spin_once(std::chrono::milliseconds(50));
+      } catch (const std::exception &) {
+        break;
+      }
+    }
   });
 }
 
