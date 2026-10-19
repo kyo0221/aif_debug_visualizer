@@ -1,6 +1,4 @@
 #pragma once
-#include <QEvent>
-#include <QWindow>
 #include <map>
 #include <memory>
 #include <string>

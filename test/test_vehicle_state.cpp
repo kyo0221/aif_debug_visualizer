@@ -100,4 +100,12 @@ TEST_F(VehicleStateTest, EstopBecomesUnknownWhenStale) {
   ASSERT_TRUE(vs->snapshot(now).estop);
   EXPECT_TRUE(*vs->snapshot(now).estop);
   EXPECT_FALSE(vs->snapshot(now + 3s).estop);
+  auto hb = node->create_publisher<SocketcanIF>("/can_rx_301", rclcpp::SensorDataQoS());
+  spinFor(200ms);
+  hb->publish(frame(0x301, 8, {0, 0, 0, 0, 8, 0, 0, 0}));
+  spinFor(100ms);
+  now = VehicleState::Clock::now();
+  ASSERT_TRUE(vs->snapshot(now).odrive_axis_state);
+  EXPECT_EQ(*vs->snapshot(now).odrive_axis_state, 8);
+  EXPECT_FALSE(vs->snapshot(now + 3s).odrive_axis_state);
 }

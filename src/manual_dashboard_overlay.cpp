@@ -375,8 +375,8 @@ void ManualDashboardOverlay::draw(const VehicleState::Snapshot & s, int w, int h
     if (!s.odrive_axis_state) {
       lines.push_back({std::string("ODrive ") + kDash, kGray});
     } else if (*s.odrive_axis_state == 8) {
-      lines.push_back({"ODrive CLOSED_LOOP " +
-        (s.odrive_bus ? fmt("%.1f", s.odrive_bus->first) : std::string("?")) + " V", kGreen});
+      lines.push_back({std::string("ODrive CLOSED_LOOP") +
+        (s.odrive_bus ? fmt(" %.1f V", s.odrive_bus->first) : std::string()), kGreen});
     } else {
       lines.push_back({"ODrive state " + std::to_string(*s.odrive_axis_state), kYellow});
     }

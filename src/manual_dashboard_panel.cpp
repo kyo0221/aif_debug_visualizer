@@ -123,10 +123,12 @@ void ManualDashboardPanel::refresh()
       static_cast<int>(s.ins->mode), static_cast<int>(s.ins->gps_fix),
       static_cast<int>(s.ins->imu_error), static_cast<int>(s.ins->gps_error),
       static_cast<int>(s.ins->time_error), static_cast<int>(s.ins->mag_pres_error)) : "");
-  const bool od = s.odrive_axis_state && s.odrive_encoder && s.odrive_bus;
+  const bool od = s.odrive_axis_state || s.odrive_encoder || s.odrive_bus;
   put("ODrive", od,
-    od ? fmt("state=%d pos=%.2f vbus=%.1f ibus=%.2f", static_cast<int>(*s.odrive_axis_state),
-      s.odrive_encoder->first, s.odrive_bus->first, s.odrive_bus->second) : "");
+    od ? "state=" + (s.odrive_axis_state ? std::to_string(*s.odrive_axis_state) : none) +
+      " pos=" + (s.odrive_encoder ? fmt("%.2f", s.odrive_encoder->first) : none) +
+      " vbus=" + (s.odrive_bus ? fmt("%.1f", s.odrive_bus->first) : none) +
+      " ibus=" + (s.odrive_bus ? fmt("%.2f", s.odrive_bus->second) : none) : "");
   put("joy", s.joy.has_value(), s.joy ? fmt("%.2f / %.2f", (*s.joy)[0], (*s.joy)[1]) : "");
   put("rpm\xE2\x86\x92m/s L/R", s.drive_meas.has_value(),
     s.drive_meas ? fmt("%.2f / %.2f", rpmToMps(s.drive_meas->left, cfg.wheel_radius),
