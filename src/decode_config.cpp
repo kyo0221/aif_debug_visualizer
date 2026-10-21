@@ -60,7 +60,6 @@ DecodeConfig DecodeConfig::load(const std::string & path)
   YAML::Node v = node(root, "vehicle");
   c.wheel_radius = req<double>(v, "wheel_radius");
   c.linear_max_vel = req<double>(v, "linear_max_vel");
-  c.steering_max_deg = req<double>(v, "steering_max_deg");
 
   YAML::Node can = node(root, "can");
   c.drive_cmd = drive(node(can, "drive_cmd"));

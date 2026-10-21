@@ -21,7 +21,7 @@ struct ChainSpec
 struct DecodeConfig
 {
   std::map<std::string, std::string> topics;
-  double wheel_radius, linear_max_vel, steering_max_deg;
+  double wheel_radius, linear_max_vel;
   DriveSpec drive_cmd, drive_meas;
   CasterAngleSpec caster_angle;
   CasterRotSpec caster_rot;

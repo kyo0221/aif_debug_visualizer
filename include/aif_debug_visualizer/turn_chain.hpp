@@ -18,7 +18,7 @@ class TurnChain {
 
   explicit TurnChain(const ChainSpec & spec) : spec_(spec) {}
 
-  void setCommand(double velocity, double steering_rad, Clock::time_point) {
+  void setCommand(double velocity, double steering_rad) {
     velocity_ = velocity;
     steering_ = steering_rad;
   }
@@ -32,12 +32,10 @@ class TurnChain {
     while (!q.empty() && q.front().time < cutoff) q.pop_front();
   }
 
-  void setEstop(bool active) { estop_ = active; }
-
-  std::array<StageView, kStages> view(Clock::time_point now) const {
+  std::array<StageView, kStages> view(Clock::time_point now, bool estop) const {
     std::array<StageView, kStages> out;
     out.fill({Dir::None, Color::Off, 0});
-    if (estop_ || !gateOpen()) return out;
+    if (estop || !gateOpen()) return out;
     out[0] = {steering_ > 0 ? Dir::Left : Dir::Right, Color::Ref, 0};
     const auto cutoff = now - window();
     for (int k = 1; k < kStages; ++k) {
@@ -84,7 +82,6 @@ class TurnChain {
   ChainSpec spec_;
   double velocity_ = 0.0;
   double steering_ = 0.0;
-  bool estop_ = false;
   std::array<std::deque<Sample>, kStages> samples_;
 };
 

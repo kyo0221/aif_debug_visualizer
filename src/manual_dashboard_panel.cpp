@@ -1,7 +1,6 @@
 #include "aif_debug_visualizer/manual_dashboard_panel.hpp"
 
 #include <cmath>
-#include <cstdio>
 #include <vector>
 #include <QFontDatabase>
 #include <QGridLayout>
@@ -25,14 +24,6 @@ const std::vector<std::string> kRaw = {
   "0x012 raw", "0x013 rot", "vx / vy", "\xCF\x89 raw (NED)", "INS flags", "ODrive", "joy axes",
   "rpm\xE2\x86\x92m/s L/R"};
 
-template <typename... A>
-std::string fmt(const char * f, A... a)
-{
-  char b[160];
-  std::snprintf(b, sizeof(b), f, a...);
-  return b;
-}
-
 }  // namespace
 
 ManualDashboardPanel::ManualDashboardPanel(QWidget * parent)
@@ -42,7 +33,7 @@ ManualDashboardPanel::ManualDashboardPanel(QWidget * parent)
   const QFont mono = QFontDatabase::systemFont(QFontDatabase::FixedFont);
   auto row = [&](int r, const std::string & name, const std::string & key) {
     auto * n = new QLabel(QString::fromStdString(name));
-    auto * v = new QLabel("\xE2\x80\x94");
+    auto * v = new QLabel(kDash);
     n->setFont(mono);
     v->setFont(mono);
     grid->addWidget(n, r, 0);
@@ -73,26 +64,29 @@ void ManualDashboardPanel::onInitialize()
 void ManualDashboardPanel::set(const std::string & key, const std::string & text, const char * color)
 {
   auto * l = values_.at(key);
-  l->setText(QString::fromStdString(text));
-  l->setStyleSheet(color ? QString("color: %1").arg(color) : QString());
+  const QString t = QString::fromStdString(text);
+  const QString style = color ? QString("color: %1").arg(color) : QString();
+  if (l->text() != t) l->setText(t);
+  if (l->styleSheet() != style) l->setStyleSheet(style);
 }
 
 void ManualDashboardPanel::refresh()
 {
-  values_.at("error")->clear();
+  auto * error = values_.at("error");
+  if (!error->text().isEmpty()) error->clear();
   state_ = VehicleState::latest();
   if (!state_ && node_) {
     try {
       state_ = VehicleState::get(node_, DecodeConfig::defaultPath());
     } catch (const std::exception & e) {
-      values_.at("error")->setText(e.what());
+      error->setText(e.what());
     }
   }
   if (!state_) return;
 
   const auto s = state_->snapshot(VehicleState::Clock::now());
   const auto & cfg = state_->config();
-  const std::string none = "\xE2\x80\x94";
+  const std::string none = kDash;
 
   for (const auto & [name, key] : kRates) {
     auto it = s.freshness.find(key);

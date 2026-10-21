@@ -10,7 +10,6 @@ topics:
 vehicle:
   wheel_radius: 0.124
   linear_max_vel: 3.0
-  steering_max_deg: 15.0
 can:
   drive_cmd: {id: 0x210, right: {offset: 0, type: int32}, left: {offset: 4, type: int32}}
   drive_meas: {id: 0x711, right: {offset: 0, type: int32}, left: {offset: 4, type: int32}}

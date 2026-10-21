@@ -36,5 +36,4 @@ pluginlib_export_plugin_description_file(rviz_common plugin_description.xml)
 install(TARGETS ${PROJECT_NAME} LIBRARY DESTINATION lib)
 install(DIRECTORY config launch assets DESTINATION share/${PROJECT_NAME})
 
-
 ament_package()

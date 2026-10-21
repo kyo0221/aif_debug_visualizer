@@ -1,8 +1,8 @@
 #include "aif_debug_visualizer/vehicle_state.hpp"
+#include <algorithm>
 #include <filesystem>
 #include <geometry_msgs/msg/twist_with_covariance_stamped.hpp>
 #include <sensor_msgs/msg/joy.hpp>
-#include <socketcan_interface_msg/msg/socketcan_if.hpp>
 #include <std_msgs/msg/bool.hpp>
 #include <std_msgs/msg/float64_multi_array.hpp>
 #include <steered_drive_msg/msg/steered_drive.hpp>
@@ -12,8 +12,7 @@ namespace aif_debug_visualizer {
 
 namespace {
 std::mutex registry_mutex;
-std::map<std::string, std::weak_ptr<VehicleState>> registry;
-std::vector<std::weak_ptr<VehicleState>> creation_order;
+std::vector<std::pair<std::string, std::weak_ptr<VehicleState>>> registry;
 using socketcan_interface_msg::msg::SocketcanIF;
 
 Frame toFrame(const SocketcanIF & m) {
@@ -26,20 +25,20 @@ Frame toFrame(const SocketcanIF & m) {
 std::shared_ptr<VehicleState> VehicleState::get(rclcpp::Node::SharedPtr node, const std::string & config_path) {
   std::lock_guard<std::mutex> lock(registry_mutex);
   const std::string key = std::filesystem::absolute(config_path).string();
-  auto it = registry.find(key);
-  if (it != registry.end()) {
-    if (auto alive = it->second.lock()) return alive;
+  registry.erase(std::remove_if(registry.begin(), registry.end(),
+    [](const auto & e) { return e.second.expired(); }), registry.end());
+  for (const auto & [k, w] : registry) {
+    if (k == key) return w.lock();
   }
   auto created = std::make_shared<VehicleState>(node, DecodeConfig::load(config_path));
-  registry[key] = created;
-  creation_order.push_back(created);
+  registry.emplace_back(key, created);
   return created;
 }
 
 std::shared_ptr<VehicleState> VehicleState::latest() {
   std::lock_guard<std::mutex> lock(registry_mutex);
-  for (auto it = creation_order.rbegin(); it != creation_order.rend(); ++it) {
-    if (auto alive = it->lock()) return alive;
+  for (auto it = registry.rbegin(); it != registry.rend(); ++it) {
+    if (auto alive = it->second.lock()) return alive;
   }
   return nullptr;
 }
@@ -66,7 +65,7 @@ struct VehicleState::Impl {
     s.cmd_velocity = m.velocity;
     s.cmd_steering = m.steering_angle;
     fresh.at("cmd_vel").tick(now);
-    chain.setCommand(m.velocity, config.steering_cmd_sign * m.steering_angle, now);
+    chain.setCommand(m.velocity, config.steering_cmd_sign * m.steering_angle);
   }
 
   void onJoy(const sensor_msgs::msg::Joy & m) {
@@ -140,7 +139,6 @@ struct VehicleState::Impl {
       if (auto e = decodeEstop(f, dlc, config.estop)) {
         s.estop = e;
         last_rx["estop"] = now;
-        chain.setEstop(*e);
       }
     } else if (id == odriveCanId(config.odrive_node_id, 0x01)) {
       if (auto v = decodeOdriveAxisState(f, dlc)) { s.odrive_axis_state = v; last_rx["odrive_axis_state"] = now; }
@@ -154,7 +152,8 @@ struct VehicleState::Impl {
   Snapshot snapshot(Clock::time_point now) const {
     std::lock_guard<std::mutex> lock(mutex);
     Snapshot out = s;
-    auto stale = [&](const char * key) { return fresh.at(key).level(now) == Freshness::Level::Stale; };
+    for (const auto & [key, f] : fresh) out.freshness[key] = {f.hz(now), f.level(now)};
+    auto stale = [&](const char * key) { return out.freshness.at(key).second == Freshness::Level::Stale; };
     if (stale("cmd_vel")) { out.cmd_velocity.reset(); out.cmd_steering.reset(); }
     if (stale("joy")) out.joy.reset();
     if (stale("drive_cmd")) out.drive_cmd.reset();
@@ -172,15 +171,11 @@ struct VehicleState::Impl {
     if (old("odrive_encoder")) out.odrive_encoder.reset();
     if (old("odrive_bus")) out.odrive_bus.reset();
     if (old("caster_rot")) out.caster_rot.reset();
-    out.estop_active = out.estop.value_or(false);
     if (stale("cmd_vel")) {
       out.chain.fill({Dir::None, Color::Off, 0});
     } else {
-      TurnChain c = chain;
-      c.setEstop(out.estop_active);
-      out.chain = c.view(now);
+      out.chain = chain.view(now, out.estop.value_or(false));
     }
-    for (const auto & [key, f] : fresh) out.freshness[key] = {f.hz(now), f.level(now)};
     return out;
   }
 };

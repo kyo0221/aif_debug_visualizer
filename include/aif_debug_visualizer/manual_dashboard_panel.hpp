@@ -6,6 +6,7 @@
 #include <QTimer>
 #include <rclcpp/rclcpp.hpp>
 #include <rviz_common/panel.hpp>
+#include "aif_debug_visualizer/format.hpp"
 #include "aif_debug_visualizer/vehicle_state.hpp"
 
 namespace aif_debug_visualizer {

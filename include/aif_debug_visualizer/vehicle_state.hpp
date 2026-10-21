@@ -33,7 +33,6 @@ class VehicleState {
     std::optional<int16_t> caster_angle_raw;
     std::optional<double> caster_angle, caster_rot;
     std::optional<bool> estop;
-    bool estop_active = false;
     std::optional<uint8_t> odrive_axis_state;
     std::optional<FloatPair> odrive_encoder, odrive_bus;
     std::optional<std::array<double, 3>> vbody_linear;

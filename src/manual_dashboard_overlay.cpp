@@ -2,12 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
-#include <cstdio>
 #include <vector>
-#include <QFont>
 #include <QFontDatabase>
 #include <QFontMetricsF>
-#include <QImage>
 #include <QPainter>
 #include <OgreHardwarePixelBuffer.h>
 #include <OgreMaterialManager.h>
@@ -31,20 +28,6 @@ const QColor kRed(231, 76, 60);
 const QColor kGray(127, 140, 141);
 const QColor kText(232, 232, 232);
 const QColor kBack(0, 0, 0, 97);
-
-std::string fmt(const char * f, double v)
-{
-  char b[64];
-  std::snprintf(b, sizeof(b), f, v);
-  return b;
-}
-
-std::string fmtInt(const char * f, int a, int b)
-{
-  char buf[64];
-  std::snprintf(buf, sizeof(buf), f, a, b);
-  return buf;
-}
 
 const char * insMode(uint8_t m)
 {
@@ -73,7 +56,6 @@ const char * chainArrow(const StageView & v, bool estop)
   }
 }
 
-const char * kDash = "\xE2\x80\x94";
 const char * kStageNames[] = {"cmd", "rpm tx", "rpm rx", "\xCE\xB4 meas", "IMU \xCF\x89 (ROS+)"};
 
 }
@@ -122,8 +104,12 @@ void ManualDashboardOverlay::onInitialize()
   rviz_rendering::RenderSystem::get()->prepareOverlays(scene_manager_);
   const std::string fonts =
     ament_index_cpp::get_package_share_directory("aif_debug_visualizer") + "/assets/font/Quicksand/";
-  QFontDatabase::addApplicationFont(QString::fromStdString(fonts + "Quicksand-Regular.ttf"));
-  QFontDatabase::addApplicationFont(QString::fromStdString(fonts + "Quicksand-Bold.ttf"));
+  static const bool fonts_loaded = [&]() {
+    QFontDatabase::addApplicationFont(QString::fromStdString(fonts + "Quicksand-Regular.ttf"));
+    QFontDatabase::addApplicationFont(QString::fromStdString(fonts + "Quicksand-Bold.ttf"));
+    return true;
+  }();
+  (void)fonts_loaded;
 
   name_ = "aif_dashboard_" + std::to_string(reinterpret_cast<uintptr_t>(this));
   auto & manager = Ogre::OverlayManager::getSingleton();
@@ -208,14 +194,14 @@ void ManualDashboardOverlay::update(float, float)
   parts.push_back(opt(s.cmd_steering, "%.3f"));
   parts.push_back(s.vbody_linear ? fmt("%.2f", (*s.vbody_linear)[0]) : "-");
   parts.push_back(s.caster ? fmt("%.3f", (*s.caster)[1]) : "-");
-  parts.push_back(s.drive_cmd ? fmtInt("%d/%d", static_cast<int>(std::lround(s.drive_cmd->left)), static_cast<int>(std::lround(s.drive_cmd->right))) : "-");
-  parts.push_back(s.drive_meas ? fmtInt("%d/%d", static_cast<int>(std::lround(s.drive_meas->left)), static_cast<int>(std::lround(s.drive_meas->right))) : "-");
+  parts.push_back(s.drive_cmd ? fmt("%d/%d", static_cast<int>(std::lround(s.drive_cmd->left)), static_cast<int>(std::lround(s.drive_cmd->right))) : "-");
+  parts.push_back(s.drive_meas ? fmt("%d/%d", static_cast<int>(std::lround(s.drive_meas->left)), static_cast<int>(std::lround(s.drive_meas->right))) : "-");
   for (const auto & c : s.chain) {
-    parts.push_back(fmtInt("%d/%d", static_cast<int>(c.dir), static_cast<int>(c.color)));
+    parts.push_back(fmt("%d/%d", static_cast<int>(c.dir), static_cast<int>(c.color)));
   }
   parts.push_back(s.autonomous ? std::to_string(*s.autonomous) : "-");
   parts.push_back(s.estop ? std::to_string(*s.estop) : "-");
-  parts.push_back(s.ins ? fmtInt("%d/%d", s.ins->mode, s.ins->gps_fix) : "-");
+  parts.push_back(s.ins ? fmt("%d/%d", s.ins->mode, s.ins->gps_fix) : "-");
   parts.push_back(s.odrive_axis_state ? std::to_string(*s.odrive_axis_state) : "-");
   parts.push_back(s.odrive_bus ? fmt("%.1f", s.odrive_bus->first) : "-");
   std::string sig;
@@ -233,9 +219,9 @@ void ManualDashboardOverlay::update(float, float)
 
 void ManualDashboardOverlay::draw(const VehicleState::Snapshot & s, int w, int h)
 {
-  QImage image(w, h, QImage::Format_ARGB32);
-  image.fill(Qt::transparent);
-  QPainter p(&image);
+  if (image_.width() != w || image_.height() != h) image_ = QImage(w, h, QImage::Format_ARGB32);
+  image_.fill(Qt::transparent);
+  QPainter p(&image_);
   p.setRenderHint(QPainter::Antialiasing, true);
   const double k = scale_->getFloat();
   const auto & cfg = state_->config();
@@ -363,7 +349,7 @@ void ManualDashboardOverlay::draw(const VehicleState::Snapshot & s, int w, int h
         p.drawLine(QPointF(x, bar.y() - 3 * k), QPointF(x, bar.bottom() + 3 * k));
       }
       const std::string nums = cmd && meas
-        ? fmtInt("%d \xE2\x94\x82 %d", static_cast<int>(std::lround(*cmd)), static_cast<int>(std::lround(*meas)))
+        ? fmt("%d \xE2\x94\x82 %d", static_cast<int>(std::lround(*cmd)), static_cast<int>(std::lround(*meas)))
         : std::string(kDash);
       text(qs(nums), QRectF(bar.right() + 8 * k, y - 8 * k, 130 * k, 24 * k), 11,
         cmd && meas ? kText : kGray, al);
@@ -384,7 +370,7 @@ void ManualDashboardOverlay::draw(const VehicleState::Snapshot & s, int w, int h
         p.setBrush(Qt::NoBrush);
         p.drawRoundedRect(cell.adjusted(4 * k, 0, -4 * k, 0), 6 * k, 6 * k);
       }
-      text(qs(chainArrow(v, s.estop_active)), QRectF(cell.x(), cell.y() + 2 * k, cell.width(), 36 * k), 22, c, ac, true);
+      text(qs(chainArrow(v, s.estop.value_or(false))), QRectF(cell.x(), cell.y() + 2 * k, cell.width(), 36 * k), 22, c, ac, true);
       text(qs(kStageNames[i]), QRectF(cell.x(), cell.y() + 38 * k, cell.width(), 16 * k), 9, kText, ac);
       if (v.color == Color::NoData) {
         text("no data", QRectF(cell.x(), cell.y() + 54 * k, cell.width(), 14 * k), 8, kGray, ac);
@@ -403,7 +389,7 @@ void ManualDashboardOverlay::draw(const VehicleState::Snapshot & s, int w, int h
 
   p.end();
   texture_->getBuffer()->blitFromMemory(
-    Ogre::PixelBox(w, h, 1, Ogre::PF_A8R8G8B8, image.bits()));
+    Ogre::PixelBox(w, h, 1, Ogre::PF_A8R8G8B8, image_.bits()));
 }
 
 }

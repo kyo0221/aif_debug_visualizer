@@ -1,5 +1,6 @@
 #pragma once
 #include <QEvent>
+#include <QImage>
 #include <QWindow>
 #include <chrono>
 #include <memory>
@@ -13,6 +14,7 @@
 #include <rviz_common/properties/bool_property.hpp>
 #include <rviz_common/properties/float_property.hpp>
 #include <rviz_common/properties/string_property.hpp>
+#include "aif_debug_visualizer/format.hpp"
 #include "aif_debug_visualizer/vehicle_state.hpp"
 
 namespace aif_debug_visualizer {
@@ -52,6 +54,7 @@ class ManualDashboardOverlay : public rviz_common::Display {
   std::chrono::steady_clock::time_point last_;
   int tex_w_ = 0;
   int tex_h_ = 0;
+  QImage image_;
   Ogre::Overlay * overlay_ = nullptr;
   Ogre::PanelOverlayElement * panel_ = nullptr;
   Ogre::TexturePtr texture_;
