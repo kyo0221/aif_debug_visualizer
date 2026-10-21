@@ -17,7 +17,7 @@ Jetson 側（`formula_ws`、ROS 2 Humble）で launch 1 本を叩くだけで、
 
 **ゴール**
 
-- `ros2 launch aif_debug_visualizer dashboard.launch.py` だけで表示が始まる
+- `ros2 launch aif_debug_visualizer debug_printer_rviz.launch.py` だけで表示が始まる
 - 指令値と実測値を **同じ単位で隣に** 置く（rpm と m/s を併記、舵角は deg）
 - 「旋回方向の鎖」で、符号が反転した段が一目で分かる
 - 未受信（2 秒）と受信周波数の低下が見える
@@ -261,7 +261,7 @@ aif_debug_visualizer/
 ├── src/ ...
 ├── config/vehicle_decode.yaml
 ├── config/dashboard.rviz             # Grid + Overlay + Panel（右ドック）、Fixed Frame = base_link
-├── launch/dashboard.launch.py        # rviz2 -d dashboard.rviz。引数: rviz_config, decode_config, use_sim_time
+├── launch/debug_printer_rviz.launch.py        # rviz2 -d dashboard.rviz。引数: rviz_config, decode_config, use_sim_time
 ├── assets/font/Quicksand/            # OFL
 ├── deps/socketcan_interface_msg/     # 同梱コピー + COLCON_IGNORE + README
 ├── test/                             # gtest（§11）
@@ -299,7 +299,7 @@ aif_debug_visualizer/
 
 1. ビルド: `cd ~/aif_debug_ws && colcon build --symlink-install`（underlay は `~/formula_ws/install`）。`colcon test` で gtest が通ること
 2. **bag 再生（開発 PC）**: `ros2 bag play /media/kyo/24B46936B4690B9C/aif_bags/4_0ms_1` と
-   `ros2 launch aif_debug_visualizer dashboard.launch.py` を並走。期待:
+   `ros2 launch aif_debug_visualizer debug_printer_rviz.launch.py` を並走。期待:
    - 左右 rpm のバーと数値が走行に追従し、左旋回中は R > L
    - 鎖の合格基準: `yaw_sign=−1`（既定）で再生全体を通して **段 2〜5 に赤が一度も出ない**こと。段 2（rpm tx）が黄になる時間帯は許容、
      段 3〜5 は判定中の大半で緑。yaml を `+1` にすると IMU 段だけ赤になること

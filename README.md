@@ -17,7 +17,7 @@ Jetson の formula_ws に `socketcan_interface_msg` が無い場合は `deps/soc
 
 ```bash
 source ~/aif_debug_ws/install/setup.bash
-ros2 launch aif_debug_visualizer dashboard.launch.py [decode_config:=/path.yaml]
+ros2 launch aif_debug_visualizer debug_printer_rviz.launch.py [decode_config:=/path.yaml]
 ```
 
 `decode_config` を省略すると `config/vehicle_decode.yaml` を使う。環境変数 `AIF_DEBUG_DECODE_CONFIG` でも指定できる。
@@ -37,7 +37,7 @@ ros2 bag play /media/kyo/24B46936B4690B9C/aif_bags/4_0ms_1
 ```bash
 source /opt/ros/humble/setup.bash && source ~/aif_debug_ws/install/setup.bash
 export ROS_DOMAIN_ID=87
-ros2 launch aif_debug_visualizer dashboard.launch.py
+ros2 launch aif_debug_visualizer debug_printer_rviz.launch.py
 ```
 
 - 上中央の速度が走行に追従し、左右 rpm のバー・数値が動く。左旋回中は R > L
