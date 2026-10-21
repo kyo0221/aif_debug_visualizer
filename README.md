@@ -8,7 +8,6 @@ AI Formula 車両の手動運転時に、操作入力・左右輪 rpm・舵角�
 ```bash
 cd ~/aif_debug_ws && source /opt/ros/humble/setup.bash && source ~/formula_ws/install/setup.bash
 colcon build --symlink-install --packages-select aif_debug_visualizer
-colcon test --packages-select aif_debug_visualizer && colcon test-result --verbose
 ```
 
 Jetson の formula_ws に `socketcan_interface_msg` が無い場合は `deps/socketcan_interface_msg/README.md` を参照する。
